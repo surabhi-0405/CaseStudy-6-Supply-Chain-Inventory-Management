@@ -1,0 +1,909 @@
+CREATE DATABASE IF NOT EXISTS supply_chain_inventory;
+
+USE supply_chain_inventory;
+
+SELECT DATABASE() AS Current_Database;
+-------------------------------------------------------------------------------------------
+
+USE supply_chain_inventory;
+
+-- ------------------------------------------------------------
+-- 1. SALES DATA
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS sales_data (
+    Sale_ID VARCHAR(20) PRIMARY KEY,
+    Product_ID VARCHAR(10) NOT NULL,
+    Store_ID VARCHAR(10) NOT NULL,
+    Sale_Date DATE NOT NULL,
+    Quantity_Sold INT NOT NULL,
+    Revenue DECIMAL(15,2) NOT NULL
+);
+
+
+-- ------------------------------------------------------------
+-- 2. INVENTORY DATA
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS inventory_data (
+    Product_ID VARCHAR(10) NOT NULL,
+    Store_ID VARCHAR(10) NOT NULL,
+    Warehouse_ID VARCHAR(10) NOT NULL,
+    Stock_Level INT NOT NULL,
+    Reorder_Level INT NOT NULL,
+    Last_Updated DATE NOT NULL
+);
+
+
+-- ------------------------------------------------------------
+-- 3. SUPPLIER DATA
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS suppliers_data (
+    Supplier_ID VARCHAR(20) PRIMARY KEY,
+    Supplier_Name VARCHAR(100) NOT NULL,
+    Product_ID VARCHAR(10) NOT NULL,
+    `Lead_Time (days)` INT NOT NULL,
+    Order_Frequency VARCHAR(20) NOT NULL
+);
+
+
+-- ------------------------------------------------------------
+-- 4. PURCHASE ORDERS
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    Order_ID VARCHAR(20) PRIMARY KEY,
+    Product_ID VARCHAR(10) NOT NULL,
+    Supplier_ID VARCHAR(20) NOT NULL,
+    Order_Date DATE NOT NULL,
+    Quantity INT NOT NULL,
+    Arrival_Date DATE NOT NULL
+);
+
+
+-- ------------------------------------------------------------
+-- VERIFY TABLE CREATION
+-- ------------------------------------------------------------
+
+SHOW TABLES;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+DESCRIBE sales_data;
+DESCRIBE inventory_data;
+DESCRIBE suppliers_data;
+DESCRIBE purchase_orders;
+-------------------------------------------------------------------------------------------
+SHOW VARIABLES LIKE 'local_infile';
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT COUNT(*) AS Sales_Rows
+FROM sales_data;
+-------------------------------------------------------------------------------------------
+
+USE supply_chain_inventory;
+
+SELECT 'sales_data' AS Table_Name, COUNT(*) AS Row_Count
+FROM sales_data
+
+UNION ALL
+
+SELECT 'inventory_data', COUNT(*)
+FROM inventory_data
+
+UNION ALL
+
+SELECT 'suppliers_data', COUNT(*)
+FROM suppliers_data
+
+UNION ALL
+
+SELECT 'purchase_orders', COUNT(*)
+FROM purchase_orders;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT
+    Product_ID,
+    COUNT(*) AS Total_Transactions,
+    SUM(Quantity_Sold) AS Total_Quantity_Sold,
+    ROUND(SUM(Revenue), 2) AS Total_Revenue,
+    ROUND(AVG(Quantity_Sold), 2) AS Avg_Quantity_Per_Transaction,
+
+    CASE
+        WHEN SUM(Quantity_Sold) >= (
+            SELECT AVG(Product_Total)
+            FROM (
+                SELECT
+                    Product_ID,
+                    SUM(Quantity_Sold) AS Product_Total
+                FROM sales_data
+                GROUP BY Product_ID
+            ) AS Product_Averages
+        )
+        THEN 'Fast-Moving'
+        ELSE 'Slow-Moving'
+    END AS Movement_Category
+
+FROM sales_data
+GROUP BY Product_ID
+ORDER BY Total_Quantity_Sold DESC;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT
+    Product_ID,
+    COUNT(*) AS Inventory_Records,
+    SUM(Stock_Level) AS Current_Stock,
+    SUM(Reorder_Level) AS Total_Reorder_Level,
+
+    SUM(
+        CASE
+            WHEN Stock_Level < Reorder_Level THEN 1
+            ELSE 0
+        END
+    ) AS Below_Reorder_Count,
+
+    ROUND(
+        SUM(
+            CASE
+                WHEN Stock_Level < Reorder_Level THEN 1
+                ELSE 0
+            END
+        ) * 100.0 / COUNT(*),
+        2
+    ) AS Reorder_Risk_Percentage,
+
+    SUM(Reorder_Level) - SUM(Stock_Level) AS Stock_Gap
+
+FROM inventory_data
+GROUP BY Product_ID
+ORDER BY Reorder_Risk_Percentage DESC;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT
+    s.Product_ID,
+    COUNT(DISTINCT s.Supplier_ID) AS Supplier_Count,
+
+    ROUND(AVG(s.`Lead_Time (days)`), 2) AS Avg_Lead_Time_Days,
+    MIN(s.`Lead_Time (days)`) AS Min_Lead_Time_Days,
+    MAX(s.`Lead_Time (days)`) AS Max_Lead_Time_Days,
+
+    COUNT(po.Order_ID) AS Total_Purchase_Orders,
+    COALESCE(SUM(po.Quantity), 0) AS Total_Quantity_Ordered,
+
+    ROUND(
+        COALESCE(AVG(po.Quantity), 0),
+        2
+    ) AS Avg_Order_Quantity
+
+FROM suppliers_data s
+
+LEFT JOIN purchase_orders po
+    ON s.Supplier_ID = po.Supplier_ID
+
+GROUP BY s.Product_ID
+ORDER BY Avg_Lead_Time_Days DESC;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT
+    Product_ID,
+    COUNT(*) AS Total_Orders,
+    SUM(Quantity) AS Total_Quantity_Ordered,
+
+    ROUND(AVG(Quantity), 2) AS Avg_Order_Quantity,
+
+    ROUND(
+        AVG(DATEDIFF(Arrival_Date, Order_Date)),
+        2
+    ) AS Avg_Actual_Lead_Time_Days,
+
+    MIN(DATEDIFF(Arrival_Date, Order_Date)) AS Min_Actual_Lead_Time_Days,
+    MAX(DATEDIFF(Arrival_Date, Order_Date)) AS Max_Actual_Lead_Time_Days
+
+FROM purchase_orders
+GROUP BY Product_ID
+ORDER BY Total_Quantity_Ordered DESC;
+-------------------------------------------------------------------------------------------
+
+USE supply_chain_inventory;
+
+SELECT
+    Product_ID,
+    COUNT(*) AS Total_Orders,
+    SUM(Quantity) AS Total_Quantity_Ordered,
+
+    ROUND(AVG(Quantity), 2) AS Avg_Order_Quantity,
+
+    ROUND(
+        AVG(DATEDIFF(Arrival_Date, Order_Date)),
+        2
+    ) AS Avg_Actual_Lead_Time_Days,
+
+    MIN(DATEDIFF(Arrival_Date, Order_Date)) AS Min_Actual_Lead_Time_Days,
+    MAX(DATEDIFF(Arrival_Date, Order_Date)) AS Max_Actual_Lead_Time_Days
+
+FROM purchase_orders
+GROUP BY Product_ID
+ORDER BY Total_Quantity_Ordered DESC;
+-------------------------------------------------------------------------------------------
+
+USE supply_chain_inventory;
+
+SELECT
+    Store_ID,
+    COUNT(*) AS Inventory_Records,
+    SUM(Stock_Level) AS Current_Stock,
+    SUM(Reorder_Level) AS Total_Reorder_Level,
+
+    SUM(
+        CASE
+            WHEN Stock_Level < Reorder_Level THEN 1
+            ELSE 0
+        END
+    ) AS Below_Reorder_Count,
+
+    ROUND(
+        SUM(
+            CASE
+                WHEN Stock_Level < Reorder_Level THEN 1
+                ELSE 0
+            END
+        ) * 100.0 / COUNT(*),
+        2
+    ) AS Reorder_Risk_Percentage
+
+FROM inventory_data
+GROUP BY Store_ID
+ORDER BY Reorder_Risk_Percentage DESC;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT
+    Product_ID,
+    Store_ID,
+    COUNT(*) AS Inventory_Records,
+    SUM(Stock_Level) AS Current_Stock,
+    SUM(Reorder_Level) AS Total_Reorder_Level,
+
+    SUM(
+        CASE
+            WHEN Stock_Level < Reorder_Level THEN 1
+            ELSE 0
+        END
+    ) AS Below_Reorder_Count,
+
+    ROUND(
+        SUM(
+            CASE
+                WHEN Stock_Level < Reorder_Level THEN 1
+                ELSE 0
+            END
+        ) * 100.0 / COUNT(*),
+        2
+    ) AS Reorder_Risk_Percentage
+
+FROM inventory_data
+GROUP BY Product_ID, Store_ID
+HAVING Below_Reorder_Count > 0
+ORDER BY Reorder_Risk_Percentage DESC;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+WITH Product_Sales AS (
+    SELECT
+        Product_ID,
+        SUM(Quantity_Sold) AS Total_Quantity_Sold,
+        SUM(Revenue) AS Total_Revenue
+    FROM sales_data
+    GROUP BY Product_ID
+),
+
+Product_Inventory AS (
+    SELECT
+        Product_ID,
+        SUM(Stock_Level) AS Current_Stock,
+        SUM(Reorder_Level) AS Total_Reorder_Level,
+
+        SUM(
+            CASE
+                WHEN Stock_Level < Reorder_Level THEN 1
+                ELSE 0
+            END
+        ) AS Below_Reorder_Count,
+
+        ROUND(
+            SUM(
+                CASE
+                    WHEN Stock_Level < Reorder_Level THEN 1
+                    ELSE 0
+                END
+            ) * 100.0 / COUNT(*),
+            2
+        ) AS Reorder_Risk_Percentage
+
+    FROM inventory_data
+    GROUP BY Product_ID
+),
+
+Sales_Threshold AS (
+    SELECT
+        AVG(Total_Quantity_Sold) AS Avg_Product_Quantity
+    FROM Product_Sales
+)
+
+SELECT
+    ps.Product_ID,
+    ps.Total_Quantity_Sold,
+    ROUND(ps.Total_Revenue, 2) AS Total_Revenue,
+
+    CASE
+        WHEN ps.Total_Quantity_Sold >= st.Avg_Product_Quantity
+        THEN 'Fast-Moving'
+        ELSE 'Slow-Moving'
+    END AS Movement_Category,
+
+    pi.Current_Stock,
+    pi.Total_Reorder_Level,
+    pi.Below_Reorder_Count,
+    pi.Reorder_Risk_Percentage
+
+FROM Product_Sales ps
+JOIN Product_Inventory pi
+    ON ps.Product_ID = pi.Product_ID
+CROSS JOIN Sales_Threshold st
+
+ORDER BY ps.Total_Quantity_Sold DESC;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT
+    DATE_FORMAT(Sale_Date, '%Y-%m') AS Sales_Month,
+    COUNT(*) AS Total_Transactions,
+    SUM(Quantity_Sold) AS Total_Quantity_Sold,
+    ROUND(SUM(Revenue), 2) AS Total_Revenue,
+    ROUND(AVG(Quantity_Sold), 2) AS Avg_Quantity_Per_Transaction
+
+FROM sales_data
+
+GROUP BY DATE_FORMAT(Sale_Date, '%Y-%m')
+
+ORDER BY Sales_Month;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS dim_product (
+    Product_Key INT AUTO_INCREMENT PRIMARY KEY,
+    Product_ID VARCHAR(10) NOT NULL UNIQUE
+);
+
+SELECT *
+FROM dim_product;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+INSERT INTO dim_product (Product_ID)
+SELECT DISTINCT Product_ID
+FROM sales_data
+ORDER BY Product_ID;
+
+SELECT *
+FROM dim_product
+ORDER BY Product_Key;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS dim_store (
+    Store_Key INT AUTO_INCREMENT PRIMARY KEY,
+    Store_ID VARCHAR(10) NOT NULL UNIQUE
+);
+
+SELECT *
+FROM dim_store;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+INSERT INTO dim_store (Store_ID)
+SELECT DISTINCT Store_ID
+FROM sales_data
+ORDER BY Store_ID;
+
+SELECT *
+FROM dim_store
+ORDER BY Store_Key;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS dim_supplier (
+    Supplier_Key INT AUTO_INCREMENT PRIMARY KEY,
+    Supplier_ID VARCHAR(20) NOT NULL UNIQUE,
+    Supplier_Name VARCHAR(100) NOT NULL,
+    Product_ID VARCHAR(10) NOT NULL,
+    Lead_Time_Days INT NOT NULL,
+    Order_Frequency VARCHAR(20) NOT NULL
+);
+
+SELECT *
+FROM dim_supplier;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+INSERT INTO dim_supplier (
+    Supplier_ID,
+    Supplier_Name,
+    Product_ID,
+    Lead_Time_Days,
+    Order_Frequency
+)
+SELECT
+    Supplier_ID,
+    Supplier_Name,
+    Product_ID,
+    `Lead_Time (days)`,
+    Order_Frequency
+FROM suppliers_data
+ORDER BY Supplier_ID;
+
+SELECT *
+FROM dim_supplier
+ORDER BY Supplier_Key;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS dim_date (
+    Date_Key INT PRIMARY KEY,
+    Full_Date DATE NOT NULL UNIQUE,
+    Year INT NOT NULL,
+    Month INT NOT NULL,
+    Month_Name VARCHAR(20) NOT NULL,
+    Quarter VARCHAR(10) NOT NULL,
+    Year_Month VARCHAR(7) NOT NULL
+);
+
+SELECT *
+FROM dim_date
+LIMIT 10;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS dim_date (
+    Date_Key INT PRIMARY KEY,
+    Full_Date DATE NOT NULL UNIQUE,
+    Year INT NOT NULL,
+    Month INT NOT NULL,
+    Month_Name VARCHAR(20) NOT NULL,
+    Quarter VARCHAR(10) NOT NULL,
+    `Year_Month` VARCHAR(7) NOT NULL
+);
+
+SELECT *
+FROM dim_date
+LIMIT 10;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+INSERT INTO dim_date (
+    Date_Key,
+    Full_Date,
+    Year,
+    Month,
+    Month_Name,
+    Quarter,
+    `Year_Month`
+)
+WITH RECURSIVE date_series AS (
+    SELECT DATE('2024-01-01') AS Full_Date
+
+    UNION ALL
+
+    SELECT DATE_ADD(Full_Date, INTERVAL 1 DAY)
+    FROM date_series
+    WHERE Full_Date < DATE('2037-09-08')
+)
+SELECT
+    CAST(DATE_FORMAT(Full_Date, '%Y%m%d') AS UNSIGNED) AS Date_Key,
+    Full_Date,
+    YEAR(Full_Date) AS Year,
+    MONTH(Full_Date) AS Month,
+    MONTHNAME(Full_Date) AS Month_Name,
+    CONCAT('Q', QUARTER(Full_Date)) AS Quarter,
+    DATE_FORMAT(Full_Date, '%Y-%m') AS `Year_Month`
+FROM date_series;
+
+SELECT
+    COUNT(*) AS Total_Dates,
+    MIN(Full_Date) AS Start_Date,
+    MAX(Full_Date) AS End_Date
+FROM dim_date;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SET SESSION cte_max_recursion_depth = 6000;
+
+INSERT INTO dim_date (
+    Date_Key,
+    Full_Date,
+    Year,
+    Month,
+    Month_Name,
+    Quarter,
+    `Year_Month`
+)
+WITH RECURSIVE date_series AS (
+    SELECT DATE('2024-01-01') AS Full_Date
+
+    UNION ALL
+
+    SELECT DATE_ADD(Full_Date, INTERVAL 1 DAY)
+    FROM date_series
+    WHERE Full_Date < DATE('2037-09-08')
+)
+SELECT
+    CAST(DATE_FORMAT(Full_Date, '%Y%m%d') AS UNSIGNED) AS Date_Key,
+    Full_Date,
+    YEAR(Full_Date) AS Year,
+    MONTH(Full_Date) AS Month,
+    MONTHNAME(Full_Date) AS Month_Name,
+    CONCAT('Q', QUARTER(Full_Date)) AS Quarter,
+    DATE_FORMAT(Full_Date, '%Y-%m') AS `Year_Month`
+FROM date_series;
+
+SELECT
+    COUNT(*) AS Total_Dates,
+    MIN(Full_Date) AS Start_Date,
+    MAX(Full_Date) AS End_Date
+FROM dim_date;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS fact_sales (
+    Sales_Key INT AUTO_INCREMENT PRIMARY KEY,
+    Sale_ID VARCHAR(20) NOT NULL UNIQUE,
+    Date_Key INT NOT NULL,
+    Product_Key INT NOT NULL,
+    Store_Key INT NOT NULL,
+    Quantity_Sold INT NOT NULL,
+    Revenue DECIMAL(15,2) NOT NULL
+);
+
+SELECT *
+FROM fact_sales
+LIMIT 5;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS fact_sales (
+    Sales_Key INT AUTO_INCREMENT PRIMARY KEY,
+    Sale_ID VARCHAR(20) NOT NULL UNIQUE,
+    Date_Key INT NOT NULL,
+    Product_Key INT NOT NULL,
+    Store_Key INT NOT NULL,
+    Quantity_Sold INT NOT NULL,
+    Revenue DECIMAL(15,2) NOT NULL
+);
+
+SELECT *
+FROM fact_sales
+LIMIT 5;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS fact_sales (
+    Sales_Key INT AUTO_INCREMENT PRIMARY KEY,
+    Sale_ID VARCHAR(20) NOT NULL UNIQUE,
+    Date_Key INT NOT NULL,
+    Product_Key INT NOT NULL,
+    Store_Key INT NOT NULL,
+    Quantity_Sold INT NOT NULL,
+    Revenue DECIMAL(15,2) NOT NULL
+);
+
+SELECT *
+FROM fact_sales
+LIMIT 5;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+INSERT INTO fact_sales (
+    Sale_ID,
+    Date_Key,
+    Product_Key,
+    Store_Key,
+    Quantity_Sold,
+    Revenue
+)
+SELECT
+    s.Sale_ID,
+    d.Date_Key,
+    p.Product_Key,
+    st.Store_Key,
+    s.Quantity_Sold,
+    s.Revenue
+FROM sales_data s
+JOIN dim_date d
+    ON s.Sale_Date = d.Full_Date
+JOIN dim_product p
+    ON s.Product_ID = p.Product_ID
+JOIN dim_store st
+    ON s.Store_ID = st.Store_ID;
+
+SELECT
+    COUNT(*) AS Total_Sales_Records,
+    SUM(Quantity_Sold) AS Total_Quantity_Sold,
+    ROUND(SUM(Revenue), 2) AS Total_Revenue
+FROM fact_sales;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS fact_inventory (
+    Inventory_Key INT AUTO_INCREMENT PRIMARY KEY,
+    Date_Key INT NOT NULL,
+    Product_Key INT NOT NULL,
+    Store_Key INT NOT NULL,
+    Warehouse_ID VARCHAR(10) NOT NULL,
+    Stock_Level INT NOT NULL,
+    Reorder_Level INT NOT NULL
+);
+
+SELECT *
+FROM fact_inventory
+LIMIT 5;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+INSERT INTO fact_inventory (
+    Date_Key,
+    Product_Key,
+    Store_Key,
+    Warehouse_ID,
+    Stock_Level,
+    Reorder_Level
+)
+SELECT
+    d.Date_Key,
+    p.Product_Key,
+    st.Store_Key,
+    i.Warehouse_ID,
+    i.Stock_Level,
+    i.Reorder_Level
+FROM inventory_data i
+JOIN dim_date d
+    ON i.Last_Updated = d.Full_Date
+JOIN dim_product p
+    ON i.Product_ID = p.Product_ID
+JOIN dim_store st
+    ON i.Store_ID = st.Store_ID;
+
+SELECT
+    COUNT(*) AS Total_Inventory_Records,
+    SUM(Stock_Level) AS Total_Stock,
+    SUM(Reorder_Level) AS Total_Reorder_Level
+FROM fact_inventory;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+CREATE TABLE IF NOT EXISTS fact_purchase_orders (
+    Order_Key INT AUTO_INCREMENT PRIMARY KEY,
+    Order_ID VARCHAR(20) NOT NULL UNIQUE,
+    Product_Key INT NOT NULL,
+    Supplier_Key INT NOT NULL,
+    Order_Date_Key INT NOT NULL,
+    Arrival_Date_Key INT NOT NULL,
+    Quantity INT NOT NULL,
+    Actual_Lead_Time_Days INT NOT NULL
+);
+
+SELECT *
+FROM fact_purchase_orders
+LIMIT 5;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+INSERT INTO fact_purchase_orders (
+    Order_ID,
+    Product_Key,
+    Supplier_Key,
+    Order_Date_Key,
+    Arrival_Date_Key,
+    Quantity,
+    Actual_Lead_Time_Days
+)
+SELECT
+    po.Order_ID,
+    p.Product_Key,
+    s.Supplier_Key,
+    od.Date_Key,
+    ad.Date_Key,
+    po.Quantity,
+    DATEDIFF(po.Arrival_Date, po.Order_Date) AS Actual_Lead_Time_Days
+FROM purchase_orders po
+JOIN dim_product p
+    ON po.Product_ID = p.Product_ID
+JOIN dim_supplier s
+    ON po.Supplier_ID = s.Supplier_ID
+JOIN dim_date od
+    ON po.Order_Date = od.Full_Date
+JOIN dim_date ad
+    ON po.Arrival_Date = ad.Full_Date;
+
+SELECT
+    COUNT(*) AS Total_PO_Records,
+    SUM(Quantity) AS Total_Quantity_Ordered,
+    ROUND(AVG(Actual_Lead_Time_Days), 2) AS Avg_Actual_Lead_Time,
+    MIN(Actual_Lead_Time_Days) AS Min_Actual_Lead_Time,
+    MAX(Actual_Lead_Time_Days) AS Max_Actual_Lead_Time
+FROM fact_purchase_orders;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT 'dim_product' AS Table_Name, COUNT(*) AS Row_Count
+FROM dim_product
+
+UNION ALL
+
+SELECT 'dim_store', COUNT(*)
+FROM dim_store
+
+UNION ALL
+
+SELECT 'dim_supplier', COUNT(*)
+FROM dim_supplier
+
+UNION ALL
+
+SELECT 'dim_date', COUNT(*)
+FROM dim_date
+
+UNION ALL
+
+SELECT 'fact_sales', COUNT(*)
+FROM fact_sales
+
+UNION ALL
+
+SELECT 'fact_inventory', COUNT(*)
+FROM fact_inventory
+
+UNION ALL
+
+SELECT 'fact_purchase_orders', COUNT(*)
+FROM fact_purchase_orders;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT
+    'fact_sales → dim_product' AS Relationship_Check,
+    COUNT(*) AS Invalid_Records
+FROM fact_sales f
+LEFT JOIN dim_product p
+    ON f.Product_Key = p.Product_Key
+WHERE p.Product_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'fact_sales → dim_store',
+    COUNT(*)
+FROM fact_sales f
+LEFT JOIN dim_store s
+    ON f.Store_Key = s.Store_Key
+WHERE s.Store_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'fact_sales → dim_date',
+    COUNT(*)
+FROM fact_sales f
+LEFT JOIN dim_date d
+    ON f.Date_Key = d.Date_Key
+WHERE d.Date_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'fact_inventory → dim_product',
+    COUNT(*)
+FROM fact_inventory f
+LEFT JOIN dim_product p
+    ON f.Product_Key = p.Product_Key
+WHERE p.Product_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'fact_inventory → dim_store',
+    COUNT(*)
+FROM fact_inventory f
+LEFT JOIN dim_store s
+    ON f.Store_Key = s.Store_Key
+WHERE s.Store_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'fact_inventory → dim_date',
+    COUNT(*)
+FROM fact_inventory f
+LEFT JOIN dim_date d
+    ON f.Date_Key = d.Date_Key
+WHERE d.Date_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'fact_purchase_orders → dim_product',
+    COUNT(*)
+FROM fact_purchase_orders f
+LEFT JOIN dim_product p
+    ON f.Product_Key = p.Product_Key
+WHERE p.Product_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'fact_purchase_orders → dim_supplier',
+    COUNT(*)
+FROM fact_purchase_orders f
+LEFT JOIN dim_supplier s
+    ON f.Supplier_Key = s.Supplier_Key
+WHERE s.Supplier_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'PO Order Date → dim_date',
+    COUNT(*)
+FROM fact_purchase_orders f
+LEFT JOIN dim_date d
+    ON f.Order_Date_Key = d.Date_Key
+WHERE d.Date_Key IS NULL
+
+UNION ALL
+
+SELECT
+    'PO Arrival Date → dim_date',
+    COUNT(*)
+FROM fact_purchase_orders f
+LEFT JOIN dim_date d
+    ON f.Arrival_Date_Key = d.Date_Key
+WHERE d.Date_Key IS NULL;
+-------------------------------------------------------------------------------------------
+USE supply_chain_inventory;
+
+SELECT
+    'Sales' AS Data_Check,
+    (SELECT COUNT(*) FROM sales_data) AS Source_Rows,
+    (SELECT COUNT(*) FROM fact_sales) AS Warehouse_Rows,
+    (SELECT SUM(Quantity_Sold) FROM sales_data) AS Source_Quantity,
+    (SELECT SUM(Quantity_Sold) FROM fact_sales) AS Warehouse_Quantity,
+    (SELECT ROUND(SUM(Revenue), 2) FROM sales_data) AS Source_Revenue,
+    (SELECT ROUND(SUM(Revenue), 2) FROM fact_sales) AS Warehouse_Revenue
+
+UNION ALL
+
+SELECT
+    'Inventory',
+    (SELECT COUNT(*) FROM inventory_data),
+    (SELECT COUNT(*) FROM fact_inventory),
+    (SELECT SUM(Stock_Level) FROM inventory_data),
+    (SELECT SUM(Stock_Level) FROM fact_inventory),
+    (SELECT SUM(Reorder_Level) FROM inventory_data),
+    (SELECT SUM(Reorder_Level) FROM fact_inventory)
+
+UNION ALL
+
+SELECT
+    'Purchase Orders',
+    (SELECT COUNT(*) FROM purchase_orders),
+    (SELECT COUNT(*) FROM fact_purchase_orders),
+    (SELECT SUM(Quantity) FROM purchase_orders),
+    (SELECT SUM(Quantity) FROM fact_purchase_orders),
+    (SELECT ROUND(AVG(DATEDIFF(Arrival_Date, Order_Date)), 2)
+     FROM purchase_orders),
+    (SELECT ROUND(AVG(Actual_Lead_Time_Days), 2)
+     FROM fact_purchase_orders);
